@@ -103,8 +103,49 @@ export default function AlbumFieldPage() {
 
     setFilesByDate(grouped)
     setFlatFiles(flat)
-    await loadLikes(flat)
     setLoading(false)
+  }
+
+  /* ---------- ❤️ LIKES (PERSISTENCE FIX) ---------- */
+  useEffect(() => {
+    if (flatFiles.length === 0) return
+    loadLikes()
+  }, [flatFiles, user])
+
+  const loadLikes = async () => {
+    const { data } = await supabase
+      .from('media_likes')
+      .select('media_path, user_id')
+
+    const counts = {}
+    const mine = new Set()
+
+    for (const l of data || []) {
+      counts[l.media_path] = (counts[l.media_path] || 0) + 1
+      if (l.user_id === user?.id) mine.add(l.media_path)
+    }
+
+    setLikes(counts)
+    setUserLikes(mine)
+  }
+
+  const toggleLike = async (path) => {
+    if (!user) return
+
+    if (userLikes.has(path)) {
+      await supabase
+        .from('media_likes')
+        .delete()
+        .eq('media_path', path)
+        .eq('user_id', user.id)
+    } else {
+      await supabase.from('media_likes').insert({
+        media_path: path,
+        user_id: user.id,
+      })
+    }
+
+    loadLikes() // 🔁 always resync from DB
   }
 
   /* ---------- UPLOAD ---------- */
@@ -162,57 +203,6 @@ export default function AlbumFieldPage() {
     loadComments(flatFiles[activeIndex].path)
   }
 
-  /* ---------- ❤️ LIKES ---------- */
-  const loadLikes = async (files) => {
-    const { data } = await supabase
-      .from('media_likes')
-      .select('media_path, user_id')
-
-    const counts = {}
-    const mine = new Set()
-
-    for (const l of data || []) {
-      counts[l.media_path] = (counts[l.media_path] || 0) + 1
-      if (l.user_id === user?.id) mine.add(l.media_path)
-    }
-
-    setLikes(counts)
-    setUserLikes(mine)
-  }
-
-  const toggleLike = async (path) => {
-    if (!user) return
-
-    if (userLikes.has(path)) {
-      await supabase.from('media_likes')
-        .delete()
-        .eq('media_path', path)
-        .eq('user_id', user.id)
-
-      setUserLikes(prev => {
-        const n = new Set(prev)
-        n.delete(path)
-        return n
-      })
-
-      setLikes(prev => ({
-        ...prev,
-        [path]: Math.max((prev[path] || 1) - 1, 0),
-      }))
-    } else {
-      await supabase.from('media_likes').insert({
-        media_path: path,
-        user_id: user.id,
-      })
-
-      setUserLikes(prev => new Set(prev).add(path))
-      setLikes(prev => ({
-        ...prev,
-        [path]: (prev[path] || 0) + 1,
-      }))
-    }
-  }
-
   /* ---------- DELETE MEDIA ---------- */
   const canDeleteFile = (file) =>
     isAdmin || (user && file.owner === user.id)
@@ -235,7 +225,8 @@ export default function AlbumFieldPage() {
 
   /* ---------- VIEWER NAV ---------- */
   const next = () => setActiveIndex(i => (i + 1) % flatFiles.length)
-  const prev = () => setActiveIndex(i => (i === 0 ? flatFiles.length - 1 : i - 1))
+  const prev = () =>
+    setActiveIndex(i => (i === 0 ? flatFiles.length - 1 : i - 1))
 
   useEffect(() => {
     if (!viewerOpen) return
@@ -324,7 +315,6 @@ export default function AlbumFieldPage() {
                     <img src={file.url} className="w-full h-full object-cover" />
                   )}
 
-                  {/* ❤️ LIKE */}
                   <div
                     className="absolute bottom-2 left-2 flex items-center gap-1
                                bg-black/60 px-2 py-1 rounded text-xs"
@@ -386,7 +376,6 @@ export default function AlbumFieldPage() {
               )}
             </div>
 
-            {/* COMMENTS */}
             <div className="bg-zinc-900 p-4 rounded flex flex-col">
               <h4 className="font-semibold mb-2">Comments</h4>
 
@@ -432,7 +421,6 @@ export default function AlbumFieldPage() {
         </div>
       )}
 
-      {/* CONFIRM DELETE */}
       {confirmOpen && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center">
           <div className="bg-zinc-900 p-6 rounded max-w-sm w-full space-y-4">
