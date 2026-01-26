@@ -8,10 +8,113 @@ import AlbumFieldPage from './pages/AlbumFieldPage'
 import ProfilePage from './pages/ProfilePage'
 import MembersShowcase from './components/MembersShowcase'
 
+/* ---------------- TOP PHOTOS ---------------- */
+function TopPhotos() {
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const load = async () => {
+      /*
+        1. Get like counts per media
+        2. Sort descending
+        3. Take top 6
+        4. Generate signed URLs for display
+      */
+
+      const { data: likes } = await supabase
+        .from('media_likes')
+        .select('media_path')
+
+      if (!likes || likes.length === 0) {
+        setItems([])
+        setLoading(false)
+        return
+      }
+
+      // Count likes per path
+      const counts = {}
+      for (const l of likes) {
+        counts[l.media_path] = (counts[l.media_path] || 0) + 1
+      }
+
+      // Sort paths by like count
+      const topPaths = Object.entries(counts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6)
+
+      const results = []
+
+      for (const [path, count] of topPaths) {
+        const { data } = await supabase.storage
+          .from('albums')
+          .createSignedUrl(path, 3600)
+
+        results.push({
+          path,
+          likes: count,
+          url: data?.signedUrl,
+          isVideo: /\.(mp4|webm|mov|avi)$/i.test(path),
+        })
+      }
+
+      setItems(results)
+      setLoading(false)
+    }
+
+    load()
+  }, [])
+
+  if (loading) {
+    return (
+      <section>
+        <h3 className="text-2xl font-bold mb-4">Top Photos</h3>
+        <p className="text-zinc-400">Loading…</p>
+      </section>
+    )
+  }
+
+  if (items.length === 0) {
+    return null
+  }
+
+  return (
+    <section className="space-y-4">
+      <h3 className="text-2xl font-bold">Top Photos</h3>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+        {items.map(item => (
+          <div
+            key={item.path}
+            className="relative aspect-square bg-zinc-900 rounded overflow-hidden"
+          >
+            {item.isVideo ? (
+              <video
+                src={item.url}
+                muted
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <img
+                src={item.url}
+                className="w-full h-full object-cover"
+              />
+            )}
+
+            <div className="absolute bottom-1 left-1 bg-black/70 text-xs px-2 py-1 rounded">
+              ❤️ {item.likes}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 /* ---------------- HOME ---------------- */
 function Home({ user }) {
   return (
-    <div className="space-y-12">
+    <div className="space-y-16">
       <section>
         <h2 className="text-3xl font-bold">HRG Airsoft</h2>
         <p className="text-zinc-400 max-w-xl">
@@ -19,6 +122,10 @@ function Home({ user }) {
         </p>
       </section>
 
+      {/* NEW: TOP PHOTOS */}
+      <TopPhotos />
+
+      {/* EXISTING: MEET THE TEAM */}
       <MembersShowcase />
     </div>
   )
