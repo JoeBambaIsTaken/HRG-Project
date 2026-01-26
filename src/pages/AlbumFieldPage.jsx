@@ -31,7 +31,6 @@ export default function AlbumFieldPage() {
   const [comments, setComments] = useState({})
   const [newComment, setNewComment] = useState('')
 
-  /* ❤️ LIKES */
   const [likes, setLikes] = useState({})
   const [userLikes, setUserLikes] = useState(new Set())
 
@@ -106,7 +105,7 @@ export default function AlbumFieldPage() {
     setLoading(false)
   }
 
-  /* ---------- ❤️ LIKES (PERSISTENCE FIX) ---------- */
+  /* ---------- LIKES ---------- */
   useEffect(() => {
     if (flatFiles.length === 0) return
     loadLikes()
@@ -145,7 +144,7 @@ export default function AlbumFieldPage() {
       })
     }
 
-    loadLikes() // 🔁 always resync from DB
+    loadLikes()
   }
 
   /* ---------- UPLOAD ---------- */
@@ -161,7 +160,6 @@ export default function AlbumFieldPage() {
         .slice(2)}.${ext}`
 
       const path = `${field}/${selectedDate}/${filename}`
-
       await supabase.storage.from('albums').upload(path, file)
     }
 
@@ -213,10 +211,7 @@ export default function AlbumFieldPage() {
   }
 
   const executeDelete = async () => {
-    await supabase.storage
-      .from('albums')
-      .remove([fileToDelete.path])
-
+    await supabase.storage.from('albums').remove([fileToDelete.path])
     setConfirmOpen(false)
     setViewerOpen(false)
     setFileToDelete(null)
@@ -241,7 +236,7 @@ export default function AlbumFieldPage() {
 
   const isVideo = (f) =>
     f.type.startsWith('video') ||
-    /\.(mp4|webm|mov|avi)$/i.test(f.name)
+    /\.(mp4|webm|mov|avi|gif)$/i.test(f.name)
 
   const activeFile = flatFiles[activeIndex]
 
@@ -296,11 +291,13 @@ export default function AlbumFieldPage() {
         .map(([date, items]) => (
           <section key={date}>
             <h3 className="font-semibold mb-3">{date}</h3>
+
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
               {items.map(file => (
                 <div
                   key={file.path}
-                  className="relative group aspect-square bg-zinc-900 rounded overflow-hidden cursor-pointer"
+                  className="relative group aspect-square bg-zinc-900 rounded overflow-hidden cursor-pointer
+                             transition-transform duration-300 hover:scale-[1.03]"
                   onClick={() => {
                     setActiveIndex(
                       flatFiles.findIndex(f => f.path === file.path)
@@ -309,15 +306,26 @@ export default function AlbumFieldPage() {
                     loadComments(file.path)
                   }}
                 >
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30
+                                  transition-colors duration-300 z-10" />
+
                   {isVideo(file) ? (
-                    <video src={file.url} muted className="w-full h-full object-cover" />
+                    <video
+                      src={file.url}
+                      muted
+                      className="w-full h-full object-cover transition-transform duration-300"
+                    />
                   ) : (
-                    <img src={file.url} className="w-full h-full object-cover" />
+                    <img
+                      src={file.url}
+                      className="w-full h-full object-cover transition-transform duration-300"
+                    />
                   )}
 
                   <div
                     className="absolute bottom-2 left-2 flex items-center gap-1
-                               bg-black/60 px-2 py-1 rounded text-xs"
+                               bg-black/60 px-2 py-1 rounded text-xs z-20
+                               opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={e => e.stopPropagation()}
                   >
                     <button onClick={() => toggleLike(file.path)}>
@@ -332,9 +340,10 @@ export default function AlbumFieldPage() {
                         e.stopPropagation()
                         requestDelete(file)
                       }}
-                      className="absolute top-2 right-2 bg-black/70 hover:bg-red-600
+                      className="absolute top-2 right-2 z-20
+                                 bg-black/70 hover:bg-red-600
                                  text-white text-xs px-2 py-1 rounded
-                                 opacity-0 group-hover:opacity-100"
+                                 opacity-0 group-hover:opacity-100 transition-opacity"
                     >
                       Delete
                     </button>
