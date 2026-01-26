@@ -11,9 +11,12 @@ export default function CalendarPage() {
   const [startTime, setStartTime] = useState('')
   const [description, setDescription] = useState('')
 
+  const [editingEventId, setEditingEventId] = useState(null)
+
   const isLeader =
     profile?.role === 'leader' || profile?.role === 'admin'
 
+  /* ---------- INIT ---------- */
   useEffect(() => {
     const init = async () => {
       const { data } = await supabase.auth.getUser()
@@ -34,6 +37,7 @@ export default function CalendarPage() {
     init()
   }, [])
 
+  /* ---------- LOAD ---------- */
   const loadEvents = async () => {
     const { data } = await supabase
       .from('events')
@@ -43,6 +47,7 @@ export default function CalendarPage() {
     setEvents(data || [])
   }
 
+  /* ---------- CREATE ---------- */
   const createEvent = async () => {
     if (!title || !startTime) return
 
@@ -54,12 +59,58 @@ export default function CalendarPage() {
       created_by: user.id,
     })
 
-    setTitle('')
-    setDescription('')
-    setStartTime('')
+    resetForm()
     loadEvents()
   }
 
+  /* ---------- UPDATE ---------- */
+  const updateEvent = async () => {
+    if (!editingEventId || !title || !startTime) return
+
+    await supabase
+      .from('events')
+      .update({
+        title,
+        field,
+        start_time: startTime,
+        description,
+      })
+      .eq('id', editingEventId)
+
+    resetForm()
+    loadEvents()
+  }
+
+  /* ---------- DELETE ---------- */
+  const deleteEvent = async (id) => {
+    if (!confirm('Delete this event?')) return
+
+    await supabase
+      .from('events')
+      .delete()
+      .eq('id', id)
+
+    loadEvents()
+  }
+
+  /* ---------- FORM HELPERS ---------- */
+  const startEdit = (ev) => {
+    setEditingEventId(ev.id)
+    setTitle(ev.title)
+    setField(ev.field)
+    setStartTime(ev.start_time.slice(0, 16))
+    setDescription(ev.description || '')
+  }
+
+  const resetForm = () => {
+    setEditingEventId(null)
+    setTitle('')
+    setField('Area 49')
+    setStartTime('')
+    setDescription('')
+  }
+
+  /* ---------- RENDER ---------- */
   return (
     <div className="space-y-10">
       <section>
@@ -69,6 +120,7 @@ export default function CalendarPage() {
         </p>
       </section>
 
+      {/* EVENTS LIST */}
       <section className="space-y-4">
         {events.length === 0 && (
           <p className="text-zinc-500">No upcoming games yet.</p>
@@ -77,27 +129,49 @@ export default function CalendarPage() {
         {events.map(ev => (
           <div
             key={ev.id}
-            className="bg-zinc-900 p-4 rounded border border-zinc-800"
+            className="bg-zinc-900 p-4 rounded border border-zinc-800 space-y-2"
           >
-            <div className="flex justify-between">
-              <h3 className="text-xl font-semibold">{ev.title}</h3>
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="text-xl font-semibold">{ev.title}</h3>
+                <p className="text-sm text-zinc-400">{ev.field}</p>
+              </div>
+
               <span className="text-sm text-zinc-400">
                 {new Date(ev.start_time).toLocaleString()}
               </span>
             </div>
 
-            <p className="text-sm text-zinc-400">{ev.field}</p>
-
             {ev.description && (
-              <p className="mt-2">{ev.description}</p>
+              <p>{ev.description}</p>
+            )}
+
+            {isLeader && (
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => startEdit(ev)}
+                  className="text-sm text-blue-400"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => deleteEvent(ev.id)}
+                  className="text-sm text-red-400"
+                >
+                  Delete
+                </button>
+              </div>
             )}
           </div>
         ))}
       </section>
 
+      {/* CREATE / EDIT FORM */}
       {user && isLeader && (
         <section className="bg-zinc-900 p-6 rounded max-w-lg space-y-4">
-          <h3 className="text-xl font-bold">Create Event</h3>
+          <h3 className="text-xl font-bold">
+            {editingEventId ? 'Edit Event' : 'Create Event'}
+          </h3>
 
           <input
             className="w-full bg-zinc-800 p-2 rounded"
@@ -130,12 +204,23 @@ export default function CalendarPage() {
             onChange={e => setDescription(e.target.value)}
           />
 
-          <button
-            onClick={createEvent}
-            className="bg-blue-600 px-4 py-2 rounded"
-          >
-            Create Event
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={editingEventId ? updateEvent : createEvent}
+              className="bg-blue-600 px-4 py-2 rounded"
+            >
+              {editingEventId ? 'Save Changes' : 'Create Event'}
+            </button>
+
+            {editingEventId && (
+              <button
+                onClick={resetForm}
+                className="bg-zinc-700 px-4 py-2 rounded"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
         </section>
       )}
     </div>
