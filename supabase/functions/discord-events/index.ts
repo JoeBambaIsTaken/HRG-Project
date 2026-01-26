@@ -1,45 +1,84 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
-const DISCORD_BOT_TOKEN = Deno.env.get("MTQ2NDk3ODE2NDQwODI1ODU4MA.GoC2JX.qkh4gY-qmHBGqW6gLhmtxc5bKEvGaL24L3Q8j8")!
-const DISCORD_GUILD_ID = Deno.env.get("866467652552622120")!
-const DISCORD_CHANNEL_ID = Deno.env.get("866467652552622123")!
-
-const SUPABASE_URL = Deno.env.get("https://lxtnwqwlgrmvkonfwram.supabase.co")!
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx4dG53cXdsZ3JtdmtvbmZ3cmFtIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTI3Mzg0MCwiZXhwIjoyMDg0ODQ5ODQwfQ.JF-1K22gbwkDLAyr2gQLSXSakiqVjH8rqlI_ZiIgOXs")!
-
-const supabaseAdmin = createClient(
-  SUPABASE_URL,
-  SUPABASE_SERVICE_ROLE_KEY
-)
+/* ---------- CORS ---------- */
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+}
 
 serve(async (req) => {
+  /* ---------- CORS PREFLIGHT ---------- */
+  if (req.method === "OPTIONS") {
+    return new Response("ok", {
+      status: 200,
+      headers: corsHeaders,
+    })
+  }
+
   try {
+    /* ---------- ENV (SAFE) ---------- */
+    const PROJECT_URL = Deno.env.get("PROJECT_URL")
+    const PROJECT_ANON_KEY = Deno.env.get("PROJECT_ANON_KEY")
+    const PROJECT_SERVICE_ROLE_KEY = Deno.env.get("PROJECT_SERVICE_ROLE_KEY")
+    const DISCORD_BOT_TOKEN = Deno.env.get("DISCORD_BOT_TOKEN")
+    const DISCORD_CHANNEL_ID = Deno.env.get("DISCORD_CHANNEL_ID")
+
+    if (
+      !PROJECT_URL ||
+      !PROJECT_ANON_KEY ||
+      !PROJECT_SERVICE_ROLE_KEY ||
+      !DISCORD_BOT_TOKEN ||
+      !DISCORD_CHANNEL_ID
+    ) {
+      console.error("Missing required environment variables")
+      return new Response("Server misconfigured", {
+        status: 500,
+        headers: corsHeaders,
+      })
+    }
+
+    /* ---------- AUTH HEADER ---------- */
     const authHeader = req.headers.get("Authorization")
     if (!authHeader) {
-      return new Response("Missing Authorization header", { status: 401 })
+      return new Response("Missing Authorization header", {
+        status: 401,
+        headers: corsHeaders,
+      })
     }
 
     const jwt = authHeader.replace("Bearer ", "")
 
+    /* ---------- SUPABASE CLIENTS ---------- */
     const supabaseUserClient = createClient(
-      SUPABASE_URL,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
+      PROJECT_URL,
+      PROJECT_ANON_KEY,
       {
-        global: { headers: { Authorization: `Bearer ${jwt}` } },
+        global: {
+          headers: { Authorization: `Bearer ${jwt}` },
+        },
       }
+    )
+
+    const supabaseAdmin = createClient(
+      PROJECT_URL,
+      PROJECT_SERVICE_ROLE_KEY
     )
 
     const {
       data: { user },
-      error: userError,
     } = await supabaseUserClient.auth.getUser()
 
-    if (userError || !user) {
-      return new Response("Unauthorized", { status: 401 })
+    if (!user) {
+      return new Response("Unauthorized", {
+        status: 401,
+        headers: corsHeaders,
+      })
     }
 
-    // 🔒 Role check
+    /* ---------- ROLE CHECK ---------- */
     const { data: profile } = await supabaseAdmin
       .from("profiles")
       .select("role")
@@ -47,20 +86,19 @@ serve(async (req) => {
       .single()
 
     if (!profile || !["leader", "admin"].includes(profile.role)) {
-      return new Response("Forbidden", { status: 403 })
+      return new Response("Forbidden", {
+        status: 403,
+        headers: corsHeaders,
+      })
     }
 
+    /* ---------- PAYLOAD ---------- */
     const { action, event } = await req.json()
+    let response
 
-    if (!action || !event) {
-      return new Response("Invalid payload", { status: 400 })
-    }
-
-    let discordResponse
-
-    // ---------- CREATE ----------
+    /* ---------- CREATE ---------- */
     if (action === "create") {
-      discordResponse = await fetch(
+      response = await fetch(
         `https://discord.com/api/v10/channels/${DISCORD_CHANNEL_ID}/messages`,
         {
           method: "POST",
@@ -82,9 +120,7 @@ serve(async (req) => {
                     inline: true,
                   },
                 ],
-                footer: {
-                  text: "HRG Airsoft – Upcoming Game",
-                },
+                footer: { text: "HRG Airsoft – Upcoming Game" },
                 timestamp: new Date(event.start_time).toISOString(),
               },
             ],
@@ -93,9 +129,9 @@ serve(async (req) => {
       )
     }
 
-    // ---------- UPDATE ----------
+    /* ---------- UPDATE ---------- */
     if (action === "update") {
-      discordResponse = await fetch(
+      response = await fetch(
         `https://discord.com/api/v10/channels/${DISCORD_CHANNEL_ID}/messages/${event.discord_message_id}`,
         {
           method: "PATCH",
@@ -117,9 +153,7 @@ serve(async (req) => {
                     inline: true,
                   },
                 ],
-                footer: {
-                  text: "HRG Airsoft – Event Updated",
-                },
+                footer: { text: "HRG Airsoft – Event Updated" },
                 timestamp: new Date(event.start_time).toISOString(),
               },
             ],
@@ -128,7 +162,7 @@ serve(async (req) => {
       )
     }
 
-    // ---------- DELETE ----------
+    /* ---------- DELETE ---------- */
     if (action === "delete") {
       await fetch(
         `https://discord.com/api/v10/channels/${DISCORD_CHANNEL_ID}/messages/${event.discord_message_id}`,
@@ -142,20 +176,31 @@ serve(async (req) => {
 
       return new Response(
         JSON.stringify({ success: true }),
-        { headers: { "Content-Type": "application/json" } }
+        {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+        }
       )
     }
 
-    const discordData = await discordResponse.json()
+    const data = await response!.json()
 
     return new Response(
-      JSON.stringify({
-        discord_message_id: discordData.id,
-      }),
-      { headers: { "Content-Type": "application/json" } }
+      JSON.stringify({ discord_message_id: data.id }),
+      {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+      }
     )
   } catch (err) {
-    console.error(err)
-    return new Response("Internal Server Error", { status: 500 })
+    console.error("Unhandled error:", err)
+    return new Response("Internal Server Error", {
+      status: 500,
+      headers: corsHeaders,
+    })
   }
 })
