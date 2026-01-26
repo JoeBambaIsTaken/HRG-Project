@@ -14,7 +14,6 @@ const FIELDS = [
   { key: 'nukebase', name: 'Nukebase' },
 ]
 
-/* ---------------- TOP PHOTOS (PER FIELD) ---------------- */
 function TopPhotosSection({ fieldKey, title }) {
   const [items, setItems] = useState([])
   const navigate = useNavigate()
@@ -48,7 +47,7 @@ function TopPhotosSection({ fieldKey, title }) {
           path,
           likes: count,
           url: data?.signedUrl,
-          isVideo: /\.(mp4|webm|mov|avi)$/i.test(path),
+          isVideo: /\.(mp4|webm|mov|avi|gif)$/i.test(path),
         })
       }
 
@@ -69,8 +68,12 @@ function TopPhotosSection({ fieldKey, title }) {
           <div
             key={item.path}
             onClick={() => navigate(`/album/${fieldKey}`)}
-            className="relative aspect-square bg-zinc-900 rounded overflow-hidden cursor-pointer hover:ring-2 hover:ring-blue-500"
+            className="relative aspect-square bg-zinc-900 rounded overflow-hidden cursor-pointer
+                       transition-transform duration-300 hover:scale-[1.04]"
           >
+            <div className="absolute inset-0 bg-black/0 hover:bg-black/30
+                            transition-colors duration-300 z-10" />
+
             {item.isVideo ? (
               <video
                 src={item.url}
@@ -84,7 +87,7 @@ function TopPhotosSection({ fieldKey, title }) {
               />
             )}
 
-            <div className="absolute bottom-2 left-2 bg-black/70 text-xs px-2 py-1 rounded">
+            <div className="absolute bottom-2 left-2 z-20 bg-black/70 text-xs px-2 py-1 rounded">
               ❤️ {item.likes}
             </div>
           </div>
@@ -94,7 +97,6 @@ function TopPhotosSection({ fieldKey, title }) {
   )
 }
 
-/* ---------------- HOME ---------------- */
 function Home({ user }) {
   return (
     <div className="space-y-20">
@@ -105,7 +107,6 @@ function Home({ user }) {
         </p>
       </section>
 
-      {/* TOP PHOTOS PER FIELD */}
       {FIELDS.map(f => (
         <TopPhotosSection
           key={f.key}
@@ -114,56 +115,27 @@ function Home({ user }) {
         />
       ))}
 
-      {/* MEET THE TEAM */}
       <MembersShowcase />
     </div>
   )
 }
 
-/* ---------------- APP ---------------- */
 export default function App() {
   const [user, setUser] = useState(null)
   const [showLogin, setShowLogin] = useState(false)
 
   useEffect(() => {
-    const ensureProfile = async (user) => {
-      if (!user) return
-
-      const { data: existing } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('id', user.id)
-        .single()
-
-      if (!existing) {
-        await supabase.from('profiles').insert({
-          id: user.id,
-          email: user.email,
-          callsign: user.email?.split('@')[0] || 'NewUser',
-        })
-      }
-    }
-
-    supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user)
-      ensureProfile(data.user)
-    })
+    supabase.auth.getUser().then(({ data }) => setUser(data.user))
 
     const { data: sub } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (_e, session) => {
         setUser(session?.user ?? null)
-        ensureProfile(session?.user)
         setShowLogin(false)
       }
     )
 
     return () => sub.subscription.unsubscribe()
   }, [])
-
-  const logout = async () => {
-    await supabase.auth.signOut()
-    setUser(null)
-  }
 
   return (
     <BrowserRouter>
@@ -177,7 +149,10 @@ export default function App() {
           </div>
 
           {user ? (
-            <button onClick={logout} className="text-red-400">
+            <button
+              onClick={() => supabase.auth.signOut()}
+              className="text-red-400"
+            >
               Logout
             </button>
           ) : (
