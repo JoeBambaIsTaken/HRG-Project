@@ -7,6 +7,7 @@ import AlbumIndex from './pages/AlbumIndex'
 import AlbumFieldPage from './pages/AlbumFieldPage'
 import ProfilePage from './pages/ProfilePage'
 import MembersShowcase from './components/MembersShowcase'
+import CalendarPage from './pages/CalendarPage'
 
 const FIELDS = [
   { key: 'area-49', name: 'Area 49' },
@@ -75,16 +76,9 @@ function TopPhotosSection({ fieldKey, title }) {
                             transition-colors duration-300 z-10" />
 
             {item.isVideo ? (
-              <video
-                src={item.url}
-                muted
-                className="w-full h-full object-cover"
-              />
+              <video src={item.url} muted className="w-full h-full object-cover" />
             ) : (
-              <img
-                src={item.url}
-                className="w-full h-full object-cover"
-              />
+              <img src={item.url} className="w-full h-full object-cover" />
             )}
 
             <div className="absolute bottom-2 left-2 z-20 bg-black/70 text-xs px-2 py-1 rounded">
@@ -145,6 +139,7 @@ export default function App() {
             <Link to="/" className="font-bold">HRG</Link>
             <Link to="/">Home</Link>
             <Link to="/album">Album</Link>
+            <Link to="/calendar">Calendar</Link>
             {user && <Link to="/profile">Profile</Link>}
           </div>
 
@@ -170,6 +165,7 @@ export default function App() {
             <Route path="/" element={<Home user={user} />} />
             <Route path="/album" element={<AlbumIndex />} />
             <Route path="/album/:field" element={<AlbumFieldPage />} />
+            <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/profile" element={<ProfilePage />} />
           </Routes>
         </main>
