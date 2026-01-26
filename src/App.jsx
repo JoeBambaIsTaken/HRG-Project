@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Link, useNavigate } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 
 import LoginModal from './components/LoginModal'
@@ -8,44 +8,38 @@ import AlbumFieldPage from './pages/AlbumFieldPage'
 import ProfilePage from './pages/ProfilePage'
 import MembersShowcase from './components/MembersShowcase'
 
-/* ---------------- TOP PHOTOS ---------------- */
-function TopPhotos() {
+const FIELDS = [
+  { key: 'area-49', name: 'Area 49' },
+  { key: 'cloudmaker', name: 'The Cloudmaker' },
+  { key: 'nukebase', name: 'Nukebase' },
+]
+
+/* ---------------- TOP PHOTOS (PER FIELD) ---------------- */
+function TopPhotosSection({ fieldKey, title }) {
   const [items, setItems] = useState([])
-  const [loading, setLoading] = useState(true)
+  const navigate = useNavigate()
 
   useEffect(() => {
     const load = async () => {
-      /*
-        1. Get like counts per media
-        2. Sort descending
-        3. Take top 6
-        4. Generate signed URLs for display
-      */
-
       const { data: likes } = await supabase
         .from('media_likes')
         .select('media_path')
 
-      if (!likes || likes.length === 0) {
-        setItems([])
-        setLoading(false)
-        return
-      }
+      if (!likes) return
 
-      // Count likes per path
       const counts = {}
       for (const l of likes) {
+        if (!l.media_path.startsWith(fieldKey + '/')) continue
         counts[l.media_path] = (counts[l.media_path] || 0) + 1
       }
 
-      // Sort paths by like count
-      const topPaths = Object.entries(counts)
+      const top = Object.entries(counts)
         .sort((a, b) => b[1] - a[1])
-        .slice(0, 6)
+        .slice(0, 3)
 
       const results = []
 
-      for (const [path, count] of topPaths) {
+      for (const [path, count] of top) {
         const { data } = await supabase.storage
           .from('albums')
           .createSignedUrl(path, 3600)
@@ -59,34 +53,23 @@ function TopPhotos() {
       }
 
       setItems(results)
-      setLoading(false)
     }
 
     load()
-  }, [])
+  }, [fieldKey])
 
-  if (loading) {
-    return (
-      <section>
-        <h3 className="text-2xl font-bold mb-4">Top Photos</h3>
-        <p className="text-zinc-400">Loading…</p>
-      </section>
-    )
-  }
-
-  if (items.length === 0) {
-    return null
-  }
+  if (items.length === 0) return null
 
   return (
     <section className="space-y-4">
-      <h3 className="text-2xl font-bold">Top Photos</h3>
+      <h3 className="text-2xl font-bold">{title}</h3>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {items.map(item => (
           <div
             key={item.path}
-            className="relative aspect-square bg-zinc-900 rounded overflow-hidden"
+            onClick={() => navigate(`/album/${fieldKey}`)}
+            className="relative aspect-square bg-zinc-900 rounded overflow-hidden cursor-pointer hover:ring-2 hover:ring-blue-500"
           >
             {item.isVideo ? (
               <video
@@ -101,7 +84,7 @@ function TopPhotos() {
               />
             )}
 
-            <div className="absolute bottom-1 left-1 bg-black/70 text-xs px-2 py-1 rounded">
+            <div className="absolute bottom-2 left-2 bg-black/70 text-xs px-2 py-1 rounded">
               ❤️ {item.likes}
             </div>
           </div>
@@ -114,7 +97,7 @@ function TopPhotos() {
 /* ---------------- HOME ---------------- */
 function Home({ user }) {
   return (
-    <div className="space-y-16">
+    <div className="space-y-20">
       <section>
         <h2 className="text-3xl font-bold">HRG Airsoft</h2>
         <p className="text-zinc-400 max-w-xl">
@@ -122,10 +105,16 @@ function Home({ user }) {
         </p>
       </section>
 
-      {/* NEW: TOP PHOTOS */}
-      <TopPhotos />
+      {/* TOP PHOTOS PER FIELD */}
+      {FIELDS.map(f => (
+        <TopPhotosSection
+          key={f.key}
+          fieldKey={f.key}
+          title={`Top Photos – ${f.name}`}
+        />
+      ))}
 
-      {/* EXISTING: MEET THE TEAM */}
+      {/* MEET THE TEAM */}
       <MembersShowcase />
     </div>
   )
@@ -136,7 +125,6 @@ export default function App() {
   const [user, setUser] = useState(null)
   const [showLogin, setShowLogin] = useState(false)
 
-  /* ---------- AUTH + PROFILE BOOTSTRAP ---------- */
   useEffect(() => {
     const ensureProfile = async (user) => {
       if (!user) return
@@ -177,11 +165,9 @@ export default function App() {
     setUser(null)
   }
 
-  /* ---------- RENDER ---------- */
   return (
     <BrowserRouter>
       <div className="min-h-screen bg-zinc-950 text-white">
-        {/* NAVBAR */}
         <nav className="flex justify-between px-6 py-4 border-b border-zinc-800">
           <div className="flex gap-6">
             <Link to="/" className="font-bold">HRG</Link>
@@ -204,7 +190,6 @@ export default function App() {
           )}
         </nav>
 
-        {/* ROUTES */}
         <main className="max-w-7xl mx-auto px-4 py-8">
           <Routes>
             <Route path="/" element={<Home user={user} />} />
@@ -214,7 +199,6 @@ export default function App() {
           </Routes>
         </main>
 
-        {/* LOGIN MODAL */}
         <LoginModal
           open={showLogin}
           onClose={() => setShowLogin(false)}
