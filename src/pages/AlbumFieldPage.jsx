@@ -1,4 +1,4 @@
-import { useParams, Link } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 
@@ -30,6 +30,10 @@ export default function AlbumFieldPage() {
 
   const [comments, setComments] = useState({})
   const [newComment, setNewComment] = useState('')
+
+  /* ❤️ LIKES */
+  const [likes, setLikes] = useState({})
+  const [userLikes, setUserLikes] = useState(new Set())
 
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [fileToDelete, setFileToDelete] = useState(null)
@@ -99,10 +103,11 @@ export default function AlbumFieldPage() {
 
     setFilesByDate(grouped)
     setFlatFiles(flat)
+    await loadLikes(flat)
     setLoading(false)
   }
 
-  /* ---------- UPLOAD (MULTI) ---------- */
+  /* ---------- UPLOAD ---------- */
   const handleUpload = async () => {
     if (!user || !selectedDate || selectedFiles.length === 0) return
 
@@ -116,16 +121,12 @@ export default function AlbumFieldPage() {
 
       const path = `${field}/${selectedDate}/${filename}`
 
-      const { error } = await supabase.storage
-        .from('albums')
-        .upload(path, file)
-
-      if (error) console.error(error.message)
+      await supabase.storage.from('albums').upload(path, file)
     }
 
     setSelectedFiles([])
     setSelectedDate('')
-    setFileInputKey((k) => k + 1)
+    setFileInputKey(k => k + 1)
     setUploading(false)
     loadFiles()
   }
@@ -138,7 +139,7 @@ export default function AlbumFieldPage() {
       .eq('media_path', path)
       .order('created_at')
 
-    setComments((p) => ({ ...p, [path]: data || [] }))
+    setComments(prev => ({ ...prev, [path]: data || [] }))
   }
 
   const submitComment = async () => {
@@ -161,6 +162,57 @@ export default function AlbumFieldPage() {
     loadComments(flatFiles[activeIndex].path)
   }
 
+  /* ---------- ❤️ LIKES ---------- */
+  const loadLikes = async (files) => {
+    const { data } = await supabase
+      .from('media_likes')
+      .select('media_path, user_id')
+
+    const counts = {}
+    const mine = new Set()
+
+    for (const l of data || []) {
+      counts[l.media_path] = (counts[l.media_path] || 0) + 1
+      if (l.user_id === user?.id) mine.add(l.media_path)
+    }
+
+    setLikes(counts)
+    setUserLikes(mine)
+  }
+
+  const toggleLike = async (path) => {
+    if (!user) return
+
+    if (userLikes.has(path)) {
+      await supabase.from('media_likes')
+        .delete()
+        .eq('media_path', path)
+        .eq('user_id', user.id)
+
+      setUserLikes(prev => {
+        const n = new Set(prev)
+        n.delete(path)
+        return n
+      })
+
+      setLikes(prev => ({
+        ...prev,
+        [path]: Math.max((prev[path] || 1) - 1, 0),
+      }))
+    } else {
+      await supabase.from('media_likes').insert({
+        media_path: path,
+        user_id: user.id,
+      })
+
+      setUserLikes(prev => new Set(prev).add(path))
+      setLikes(prev => ({
+        ...prev,
+        [path]: (prev[path] || 0) + 1,
+      }))
+    }
+  }
+
   /* ---------- DELETE MEDIA ---------- */
   const canDeleteFile = (file) =>
     isAdmin || (user && file.owner === user.id)
@@ -171,8 +223,6 @@ export default function AlbumFieldPage() {
   }
 
   const executeDelete = async () => {
-    if (!fileToDelete) return
-
     await supabase.storage
       .from('albums')
       .remove([fileToDelete.path])
@@ -183,24 +233,17 @@ export default function AlbumFieldPage() {
     loadFiles()
   }
 
-  /* ---------- NAVIGATION ---------- */
-  const next = () =>
-    setActiveIndex((i) => (i + 1) % flatFiles.length)
-
-  const prev = () =>
-    setActiveIndex((i) =>
-      i === 0 ? flatFiles.length - 1 : i - 1
-    )
+  /* ---------- VIEWER NAV ---------- */
+  const next = () => setActiveIndex(i => (i + 1) % flatFiles.length)
+  const prev = () => setActiveIndex(i => (i === 0 ? flatFiles.length - 1 : i - 1))
 
   useEffect(() => {
     if (!viewerOpen) return
-
     const h = (e) => {
       if (e.key === 'ArrowRight') next()
       if (e.key === 'ArrowLeft') prev()
       if (e.key === 'Escape') setViewerOpen(false)
     }
-
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [viewerOpen, flatFiles])
@@ -222,24 +265,22 @@ export default function AlbumFieldPage() {
           <input
             type="date"
             value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
+            onChange={e => setSelectedDate(e.target.value)}
             className="w-full bg-zinc-800 p-2 rounded"
           />
 
           {!selectedDate && (
             <p className="text-xs text-red-400">
-              Please select a date before uploading files
+              Please select a date before uploading
             </p>
           )}
 
           <input
             key={fileInputKey}
             type="file"
-            accept="image/*,video/*"
             multiple
-            onChange={(e) =>
-              setSelectedFiles(Array.from(e.target.files))
-            }
+            accept="image/*,video/*"
+            onChange={e => setSelectedFiles(Array.from(e.target.files))}
           />
 
           {selectedFiles.length > 0 && (
@@ -249,13 +290,8 @@ export default function AlbumFieldPage() {
           )}
 
           <button
-            type="button"
             onClick={handleUpload}
-            disabled={
-              uploading ||
-              !selectedDate ||
-              selectedFiles.length === 0
-            }
+            disabled={!selectedDate || selectedFiles.length === 0 || uploading}
             className="w-full bg-blue-600 disabled:bg-zinc-700 py-2 rounded"
           >
             {uploading ? 'Uploading…' : 'Upload files'}
@@ -270,43 +306,45 @@ export default function AlbumFieldPage() {
           <section key={date}>
             <h3 className="font-semibold mb-3">{date}</h3>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-              {items.map((file) => (
+              {items.map(file => (
                 <div
                   key={file.path}
                   className="relative group aspect-square bg-zinc-900 rounded overflow-hidden cursor-pointer"
                   onClick={() => {
                     setActiveIndex(
-                      flatFiles.findIndex(
-                        (f) => f.path === file.path
-                      )
+                      flatFiles.findIndex(f => f.path === file.path)
                     )
                     setViewerOpen(true)
                     loadComments(file.path)
                   }}
                 >
                   {isVideo(file) ? (
-                    <video
-                      src={file.url}
-                      muted
-                      className="w-full h-full object-cover"
-                    />
+                    <video src={file.url} muted className="w-full h-full object-cover" />
                   ) : (
-                    <img
-                      src={file.url}
-                      className="w-full h-full object-cover"
-                    />
+                    <img src={file.url} className="w-full h-full object-cover" />
                   )}
+
+                  {/* ❤️ LIKE */}
+                  <div
+                    className="absolute bottom-2 left-2 flex items-center gap-1
+                               bg-black/60 px-2 py-1 rounded text-xs"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <button onClick={() => toggleLike(file.path)}>
+                      {userLikes.has(file.path) ? '❤️' : '🤍'}
+                    </button>
+                    <span>{likes[file.path] || 0}</span>
+                  </div>
 
                   {canDeleteFile(file) && (
                     <button
-                      onClick={(e) => {
+                      onClick={e => {
                         e.stopPropagation()
                         requestDelete(file)
                       }}
-                      className="absolute top-2 right-2
-                        bg-black/70 hover:bg-red-600
-                        text-white text-xs px-2 py-1 rounded
-                        opacity-0 group-hover:opacity-100"
+                      className="absolute top-2 right-2 bg-black/70 hover:bg-red-600
+                                 text-white text-xs px-2 py-1 rounded
+                                 opacity-0 group-hover:opacity-100"
                     >
                       Delete
                     </button>
@@ -317,7 +355,7 @@ export default function AlbumFieldPage() {
           </section>
         ))}
 
-      {/* VIEWER */}
+      {/* FULLSCREEN VIEWER */}
       {viewerOpen && activeFile && (
         <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center">
           <button onClick={prev} className="absolute left-4 text-white text-5xl">‹</button>
@@ -330,6 +368,14 @@ export default function AlbumFieldPage() {
                 <img src={activeFile.url} className="max-h-[80vh]" />
               )}
 
+              <button
+                onClick={() => toggleLike(activeFile.path)}
+                className="absolute bottom-4 left-4 bg-black/70 px-3 py-2 rounded"
+              >
+                {userLikes.has(activeFile.path) ? '❤️' : '🤍'}{' '}
+                {likes[activeFile.path] || 0}
+              </button>
+
               {canDeleteFile(activeFile) && (
                 <button
                   onClick={() => requestDelete(activeFile)}
@@ -340,11 +386,12 @@ export default function AlbumFieldPage() {
               )}
             </div>
 
+            {/* COMMENTS */}
             <div className="bg-zinc-900 p-4 rounded flex flex-col">
               <h4 className="font-semibold mb-2">Comments</h4>
 
               <div className="flex-1 space-y-2 overflow-y-auto">
-                {(comments[activeFile.path] || []).map((c) => (
+                {(comments[activeFile.path] || []).map(c => (
                   <div key={c.id} className="text-sm">
                     <div className="flex justify-between">
                       <strong>{c.author_callsign}</strong>
@@ -366,7 +413,7 @@ export default function AlbumFieldPage() {
                 <>
                   <textarea
                     value={newComment}
-                    onChange={(e) => setNewComment(e.target.value)}
+                    onChange={e => setNewComment(e.target.value)}
                     className="bg-zinc-800 p-2 rounded mt-2"
                   />
                   <button
