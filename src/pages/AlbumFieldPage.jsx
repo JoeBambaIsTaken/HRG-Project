@@ -1,3 +1,7 @@
+// AlbumFieldPage.jsx
+// Beta v0.0.06
+// FIX: Deleting media now removes storage object before DB cleanup
+
 import { useParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
@@ -60,6 +64,23 @@ export default function AlbumFieldPage() {
     init()
   }, [field])
 
+  /* ---------- ENSURE ALBUM ITEM EXISTS ---------- */
+  const ensureAlbumItem = async (path, date) => {
+    const { data: existing } = await supabase
+      .from('album_items')
+      .select('id')
+      .eq('path', path)
+      .single()
+
+    if (existing) return
+
+    await supabase.from('album_items').insert({
+      path,
+      field,
+      game_date: date,
+    })
+  }
+
   /* ---------- LOAD FILES ---------- */
   const loadFiles = async () => {
     setLoading(true)
@@ -87,6 +108,8 @@ export default function AlbumFieldPage() {
           .from('albums')
           .createSignedUrl(path, 3600)
 
+        await ensureAlbumItem(path, folder.name)
+
         const obj = {
           name: file.name,
           path,
@@ -112,6 +135,8 @@ export default function AlbumFieldPage() {
   }, [flatFiles, user])
 
   const loadLikes = async () => {
+    const existingPaths = new Set(flatFiles.map(f => f.path))
+
     const { data } = await supabase
       .from('media_likes')
       .select('media_path, user_id')
@@ -120,6 +145,7 @@ export default function AlbumFieldPage() {
     const mine = new Set()
 
     for (const l of data || []) {
+      if (!existingPaths.has(l.media_path)) continue
       counts[l.media_path] = (counts[l.media_path] || 0) + 1
       if (l.user_id === user?.id) mine.add(l.media_path)
     }
@@ -130,6 +156,9 @@ export default function AlbumFieldPage() {
 
   const toggleLike = async (path) => {
     if (!user) return
+
+    const date = path.split('/')[1]
+    await ensureAlbumItem(path, date)
 
     if (userLikes.has(path)) {
       await supabase
@@ -161,6 +190,7 @@ export default function AlbumFieldPage() {
 
       const path = `${field}/${selectedDate}/${filename}`
       await supabase.storage.from('albums').upload(path, file)
+      await ensureAlbumItem(path, selectedDate)
     }
 
     setSelectedFiles([])
@@ -211,7 +241,15 @@ export default function AlbumFieldPage() {
   }
 
   const executeDelete = async () => {
-    await supabase.storage.from('albums').remove([fileToDelete.path])
+    await supabase.storage
+      .from('albums')
+      .remove([fileToDelete.path])
+
+    await supabase
+      .from('album_items')
+      .delete()
+      .eq('path', fileToDelete.path)
+
     setConfirmOpen(false)
     setViewerOpen(false)
     setFileToDelete(null)
@@ -245,7 +283,6 @@ export default function AlbumFieldPage() {
     <div className="space-y-8">
       <h2 className="text-3xl font-bold">{fieldName}</h2>
 
-      {/* UPLOAD */}
       {user && (
         <div className="bg-zinc-900 p-4 rounded max-w-md space-y-3">
           <input
@@ -285,7 +322,6 @@ export default function AlbumFieldPage() {
         </div>
       )}
 
-      {/* GALLERY */}
       {Object.entries(filesByDate)
         .sort(([a], [b]) => b.localeCompare(a))
         .map(([date, items]) => (
@@ -354,7 +390,6 @@ export default function AlbumFieldPage() {
           </section>
         ))}
 
-      {/* FULLSCREEN VIEWER */}
       {viewerOpen && activeFile && (
         <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center">
           <button onClick={prev} className="absolute left-4 text-white text-5xl">‹</button>
