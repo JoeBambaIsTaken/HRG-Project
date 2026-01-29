@@ -1,3 +1,7 @@
+// CalendarPage.jsx
+// Beta v0.0.04
+// Cleaned: Discord-related logic fully removed
+
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 
@@ -5,7 +9,6 @@ export default function CalendarPage() {
   const [events, setEvents] = useState([])
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
-  const [session, setSession] = useState(null)
 
   const [title, setTitle] = useState('')
   const [field, setField] = useState('Area 49')
@@ -20,19 +23,19 @@ export default function CalendarPage() {
   /* ---------- INIT ---------- */
   useEffect(() => {
     const init = async () => {
-      const { data: sessionData } = await supabase.auth.getSession()
-      setSession(sessionData.session)
-
       const { data: userData } = await supabase.auth.getUser()
       setUser(userData.user)
 
       if (userData.user) {
-        const { data: prof } = await supabase
+        const { data: prof, error } = await supabase
           .from('profiles')
           .select('*')
           .eq('id', userData.user.id)
           .single()
-        setProfile(prof)
+
+        if (!error) {
+          setProfile(prof)
+        }
       }
 
       loadEvents()
@@ -41,55 +44,34 @@ export default function CalendarPage() {
     init()
 
     const { data: sub } = supabase.auth.onAuthStateChange(
-      (_event, newSession) => {
-        setSession(newSession)
-        setUser(newSession?.user ?? null)
+      (_event, session) => {
+        setUser(session?.user ?? null)
       }
     )
 
     return () => sub.subscription.unsubscribe()
   }, [])
 
-  /* ---------- LOAD ---------- */
+  /* ---------- LOAD EVENTS ---------- */
   const loadEvents = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('events')
       .select('*')
       .order('start_time', { ascending: true })
 
+    if (error) {
+      console.error('Error loading events:', error)
+      return
+    }
+
     setEvents(data || [])
   }
 
-  /* ---------- DISCORD HELPER ---------- */
-  const callDiscord = async (action, event) => {
-    if (!session || !session.access_token) {
-      console.warn('Skipping Discord call: no active session')
-      return null
-    }
-
-    const { data, error } = await supabase.functions.invoke(
-      'discord-events',
-      {
-        body: { action, event },
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-      }
-    )
-
-    if (error) {
-      console.error('Discord function error:', error)
-      throw error
-    }
-
-    return data
-  }
-
-  /* ---------- CREATE ---------- */
+  /* ---------- CREATE EVENT ---------- */
   const createEvent = async () => {
     if (!title || !startTime || !user) return
 
-    const { data: inserted, error } = await supabase
+    const { error } = await supabase
       .from('events')
       .insert({
         title,
@@ -98,32 +80,21 @@ export default function CalendarPage() {
         description,
         created_by: user.id,
       })
-      .select()
-      .single()
 
-    if (error) return
-
-    try {
-      const discord = await callDiscord('create', inserted)
-      if (discord?.discord_message_id) {
-        await supabase
-          .from('events')
-          .update({ discord_message_id: discord.discord_message_id })
-          .eq('id', inserted.id)
-      }
-    } catch {
-      console.warn('Event created but Discord post failed')
+    if (error) {
+      console.error('Error creating event:', error)
+      return
     }
 
     resetForm()
     loadEvents()
   }
 
-  /* ---------- UPDATE ---------- */
+  /* ---------- UPDATE EVENT ---------- */
   const updateEvent = async () => {
     if (!editingEventId || !title || !startTime) return
 
-    const { data: updated, error } = await supabase
+    const { error } = await supabase
       .from('events')
       .update({
         title,
@@ -132,42 +103,29 @@ export default function CalendarPage() {
         description,
       })
       .eq('id', editingEventId)
-      .select()
-      .single()
 
-    if (error) return
-
-    if (updated.discord_message_id) {
-      try {
-        await callDiscord('update', updated)
-      } catch {
-        console.warn('Discord update failed')
-      }
+    if (error) {
+      console.error('Error updating event:', error)
+      return
     }
 
     resetForm()
     loadEvents()
   }
 
-  /* ---------- DELETE ---------- */
+  /* ---------- DELETE EVENT ---------- */
   const deleteEvent = async (id) => {
-    const ev = events.find(e => e.id === id)
-    if (!ev) return
-
     if (!confirm('Delete this event?')) return
 
-    if (ev.discord_message_id) {
-      try {
-        await callDiscord('delete', ev)
-      } catch {
-        console.warn('Discord delete failed')
-      }
-    }
-
-    await supabase
+    const { error } = await supabase
       .from('events')
       .delete()
       .eq('id', id)
+
+    if (error) {
+      console.error('Error deleting event:', error)
+      return
+    }
 
     loadEvents()
   }
