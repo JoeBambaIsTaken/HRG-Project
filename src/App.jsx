@@ -1,3 +1,7 @@
+// App.jsx
+// Beta v0.0.04
+// FIX: Top Photos now ignore deleted media (validated against album_items)
+
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Link, useNavigate } from 'react-router-dom'
 import { supabase } from './supabaseClient'
@@ -21,15 +25,27 @@ function TopPhotosSection({ fieldKey, title }) {
 
   useEffect(() => {
     const load = async () => {
+      // 1️⃣ Load existing media for this field
+      const { data: media } = await supabase
+        .from('album_items')
+        .select('path')
+        .eq('field', fieldKey)
+
+      if (!media || media.length === 0) return
+
+      const validPaths = new Set(media.map(m => m.path))
+
+      // 2️⃣ Load likes
       const { data: likes } = await supabase
         .from('media_likes')
         .select('media_path')
 
       if (!likes) return
 
+      // 3️⃣ Count likes ONLY for existing media
       const counts = {}
       for (const l of likes) {
-        if (!l.media_path.startsWith(fieldKey + '/')) continue
+        if (!validPaths.has(l.media_path)) continue
         counts[l.media_path] = (counts[l.media_path] || 0) + 1
       }
 
@@ -39,15 +55,18 @@ function TopPhotosSection({ fieldKey, title }) {
 
       const results = []
 
+      // 4️⃣ Resolve URLs
       for (const [path, count] of top) {
         const { data } = await supabase.storage
           .from('albums')
           .createSignedUrl(path, 3600)
 
+        if (!data?.signedUrl) continue
+
         results.push({
           path,
           likes: count,
-          url: data?.signedUrl,
+          url: data.signedUrl,
           isVideo: /\.(mp4|webm|mov|avi|gif)$/i.test(path),
         })
       }
