@@ -1,6 +1,5 @@
 // AlbumFieldPage.jsx
-// Beta v0.0.06
-// FIX: Deleting media now removes storage object before DB cleanup
+// Beta v0.0.07
 
 import { useParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
@@ -79,6 +78,22 @@ export default function AlbumFieldPage() {
       field,
       game_date: date,
     })
+  }
+
+  /* ---------- HELPERS ---------- */
+  const isGif = (f) =>
+    /\.gif$/i.test(f.name)
+
+  const isVideo = (f) =>
+    !isGif(f) &&
+    (f.type.startsWith('video') ||
+      /\.(mp4|webm|mov|avi)$/i.test(f.name))
+
+  const getThumbnailPath = (path) => {
+    const parts = path.split('/')
+    const file = parts.pop()
+    const base = file.replace(/\.[^.]+$/, '')
+    return [...parts, 'thumbs', `${base}.jpg`].join('/')
   }
 
   /* ---------- LOAD FILES ---------- */
@@ -272,55 +287,12 @@ export default function AlbumFieldPage() {
     return () => window.removeEventListener('keydown', h)
   }, [viewerOpen, flatFiles])
 
-  const isVideo = (f) =>
-    f.type.startsWith('video') ||
-    /\.(mp4|webm|mov|avi|gif)$/i.test(f.name)
-
   const activeFile = flatFiles[activeIndex]
 
   /* ---------- RENDER ---------- */
   return (
     <div className="space-y-8">
       <h2 className="text-3xl font-bold">{fieldName}</h2>
-
-      {user && (
-        <div className="bg-zinc-900 p-4 rounded max-w-md space-y-3">
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={e => setSelectedDate(e.target.value)}
-            className="w-full bg-zinc-800 p-2 rounded"
-          />
-
-          {!selectedDate && (
-            <p className="text-xs text-red-400">
-              Please select a date before uploading
-            </p>
-          )}
-
-          <input
-            key={fileInputKey}
-            type="file"
-            multiple
-            accept="image/*,video/*"
-            onChange={e => setSelectedFiles(Array.from(e.target.files))}
-          />
-
-          {selectedFiles.length > 0 && (
-            <p className="text-sm text-zinc-400">
-              {selectedFiles.length} file(s) selected
-            </p>
-          )}
-
-          <button
-            onClick={handleUpload}
-            disabled={!selectedDate || selectedFiles.length === 0 || uploading}
-            className="w-full bg-blue-600 disabled:bg-zinc-700 py-2 rounded"
-          >
-            {uploading ? 'Uploading…' : 'Upload files'}
-          </button>
-        </div>
-      )}
 
       {Object.entries(filesByDate)
         .sort(([a], [b]) => b.localeCompare(a))
@@ -348,7 +320,10 @@ export default function AlbumFieldPage() {
                   {isVideo(file) ? (
                     <video
                       src={file.url}
+                      poster={getThumbnailPath(file.path)}
                       muted
+                      playsInline
+                      preload="metadata"
                       className="w-full h-full object-cover transition-transform duration-300"
                     />
                   ) : (
