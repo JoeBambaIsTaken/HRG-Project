@@ -1,6 +1,5 @@
 // App.jsx
-// Beta v0.0.04
-// FIX: Top Photos now ignore deleted media (validated against album_items)
+// Beta v0.0.05
 
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Link, useNavigate } from 'react-router-dom'
@@ -22,6 +21,18 @@ const FIELDS = [
 function TopPhotosSection({ fieldKey, title }) {
   const [items, setItems] = useState([])
   const navigate = useNavigate()
+
+  const isGif = (path) => /\.gif$/i.test(path)
+
+  const isVideo = (path) =>
+    !isGif(path) && /\.(mp4|webm|mov|avi)$/i.test(path)
+
+  const getThumbnailPath = (path) => {
+    const parts = path.split('/')
+    const file = parts.pop()
+    const base = file.replace(/\.[^.]+$/, '')
+    return [...parts, 'thumbs', `${base}.jpg`].join('/')
+  }
 
   useEffect(() => {
     const load = async () => {
@@ -67,7 +78,7 @@ function TopPhotosSection({ fieldKey, title }) {
           path,
           likes: count,
           url: data.signedUrl,
-          isVideo: /\.(mp4|webm|mov|avi|gif)$/i.test(path),
+          isVideo: isVideo(path),
         })
       }
 
@@ -95,9 +106,19 @@ function TopPhotosSection({ fieldKey, title }) {
                             transition-colors duration-300 z-10" />
 
             {item.isVideo ? (
-              <video src={item.url} muted className="w-full h-full object-cover" />
+              <video
+                src={item.url}
+                poster={getThumbnailPath(item.path)}
+                muted
+                playsInline
+                preload="metadata"
+                className="w-full h-full object-cover"
+              />
             ) : (
-              <img src={item.url} className="w-full h-full object-cover" />
+              <img
+                src={item.url}
+                className="w-full h-full object-cover"
+              />
             )}
 
             <div className="absolute bottom-2 left-2 z-20 bg-black/70 text-xs px-2 py-1 rounded">
