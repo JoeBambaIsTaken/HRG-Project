@@ -1,5 +1,5 @@
 // AlbumFieldPage.jsx
-// Beta v0.0.07
+// Beta v0.0.08
 
 import { useParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
@@ -293,6 +293,33 @@ export default function AlbumFieldPage() {
   return (
     <div className="space-y-8">
       <h2 className="text-3xl font-bold">{fieldName}</h2>
+
+      {user && (
+        <div className="bg-zinc-900 p-4 rounded max-w-md space-y-3">
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={e => setSelectedDate(e.target.value)}
+            className="w-full bg-zinc-800 p-2 rounded"
+          />
+
+          <input
+            key={fileInputKey}
+            type="file"
+            multiple
+            accept="image/*,video/*"
+            onChange={e => setSelectedFiles(Array.from(e.target.files))}
+          />
+
+          <button
+            onClick={handleUpload}
+            disabled={!selectedDate || selectedFiles.length === 0 || uploading}
+            className="w-full bg-blue-600 disabled:bg-zinc-700 py-2 rounded"
+          >
+            {uploading ? 'Uploading…' : 'Upload files'}
+          </button>
+        </div>
+      )}
 
       {Object.entries(filesByDate)
         .sort(([a], [b]) => b.localeCompare(a))
